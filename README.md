@@ -1,23 +1,21 @@
-# Excelsis 360 — Data Analyst Agent
+# PySpark AI Agent
 
-AI-powered data analyst for the Excelsis360 platform, built on a LangGraph ReAct agent (Ollama local LLMs), SQL Server data backend, and a FastAPI + React full-stack web interface.
+AI-powered data analyst built on PySpark. Ask natural-language questions about any CSV or Parquet dataset; a LangGraph ReAct agent reasons across 13 tools, runs Spark SQL, and streams answers token-by-token through a FastAPI + React interface.
 
 ---
 
 ## Features
 
-- **Natural-language chat** — ask questions about Excelsis360 data in plain English; the analysis model reasons across multiple tools and streams the answer token-by-token
-- **ReAct reasoning loop** — the analysis model decides which tools to call (attendance stats, at-risk query, ad-hoc SQL) and in what order
-- **RAG knowledge base** — ChromaDB vector store (`nomic-embed-text` embeddings via Ollama) indexes SQL schema metadata and policy documents; the agent uses `retrieve_schema` and `retrieve_policy` for accurate, grounded answers
-- **Two-model setup** — `qwen2.5:14b` handles reasoning and tool calling; `nomic-embed-text` handles vector encoding for the RAG layer; both run fully locally via Ollama
-- **Prompt guardrails** — every chat message is validated before reaching the agent: length cap (2000 chars), token-budget check, and injection-pattern detection
-- **SQL Server backend** — connects to one or more SQL Server databases; the agent can run ad-hoc T-SQL SELECT queries alongside structured tools
-- **Interactive dashboards** — Plotly interactive charts and a multi-panel matplotlib/seaborn static dashboard (PNG)
-- **Web UI** — React + Tailwind dark-themed interface with live streaming chat, KPI dashboard, at-risk student table, and user management
-- **REST API** — FastAPI backend with JWT auth, SSE streaming, file upload, and dashboard generation
-- **Rate limiting** — 10 requests/minute per IP on all chat and data endpoints (slowapi)
-- **Jupyter notebook** — full interactive analysis environment that shares the same `src/` backend
-- **MCP server** — exposes Excelsis360 data tools to Claude Code
+- **Natural-language chat** — query your data in plain English; answers stream token-by-token via SSE
+- **PySpark backend** — loads CSV and Parquet files from a configurable `DATA_PATH`; registers them as Spark SQL views at startup
+- **ReAct reasoning loop** — LangGraph `create_react_agent` decides which tools to call and in what order (stats, anomaly detection, trend analysis, ad-hoc SQL, and more)
+- **13 built-in tools** — `query_data`, `get_threshold_alerts`, `statistical_summary`, `detect_anomalies`, `get_top_n`, `analyze_trend`, `compare_periods`, `compare_segments`, `get_summary`, `update_dashboard_view`, `run_sql_query`, `retrieve_schema`, `retrieve_policy`
+- **RAG knowledge base** — ChromaDB vector store (`nomic-embed-text` via Ollama) indexes Spark schema metadata and policy documents for grounded, accurate answers
+- **Prompt guardrails** — every message is validated before reaching the agent: length cap, token-budget check, injection-pattern detection
+- **Read-only SQL** — all queries are parsed with `sqlglot` at runtime; INSERT / UPDATE / DELETE / DDL are blocked
+- **Web UI** — React + Tailwind dark-themed chat with live streaming, KPI dashboard, at-risk entity table, and user management
+- **REST API** — FastAPI with JWT auth, SSE streaming, rate limiting (10 req/min per IP)
+- **MCP server** — exposes data tools to Claude Code via FastMCP stdio
 
 ---
 
@@ -27,59 +25,58 @@ AI-powered data analyst for the Excelsis360 platform, built on a LangGraph ReAct
 |---|---|
 | LLM | `qwen2.5:14b` via Ollama (`langchain-ollama`) |
 | Agent | LangGraph ReAct (`create_react_agent`) |
-| Database | SQL Server via SQLAlchemy + `pyodbc` (ODBC Driver 18, `QueuePool`) |
+| Data engine | PySpark 3.5+ (`SparkSession`, Spark SQL) |
+| Data formats | CSV, Parquet (auto-loaded from `DATA_PATH`) |
 | Backend | FastAPI + Uvicorn |
 | Auth | JWT (python-jose) + bcrypt |
 | Frontend | React 18 + Vite + Tailwind CSS |
-| Data | pandas, supports CSV / Excel / Parquet |
-| Dashboards | Plotly (interactive HTML) + matplotlib/seaborn (PNG) |
 | Vector DB | ChromaDB (persistent) |
 | Embeddings | `nomic-embed-text` via Ollama |
 | Rate limiter | slowapi |
+| SQL safety | sqlglot (parse-time DML/DDL blocking) |
 
 ---
 
 ## Project Structure
 
 ```
-├── api/                  # FastAPI backend
-│   ├── main.py           # App startup, CORS, static file mounts
-│   ├── auth.py           # User registry (users.json), JWT, bcrypt
-│   ├── deps.py           # FastAPI dependencies (get_current_user, etc.)
-│   ├── models.py         # Pydantic request/response models
-│   ├── users.json        # Persisted user accounts (auto-created)
+├── api/                    # FastAPI backend
+│   ├── main.py             # App startup, CORS, lifespan
+│   ├── auth.py             # User registry (users.json), JWT, bcrypt
+│   ├── deps.py             # FastAPI dependencies
+│   ├── models.py           # Pydantic request/response models
 │   └── routers/
-│       ├── auth.py       # Login, user CRUD
-│       ├── chat.py       # SSE streaming chat endpoint
-│       └── data.py       # Data stats, at-risk, trends, sparklines
+│       ├── auth.py         # Login, user CRUD
+│       ├── chat.py         # SSE streaming chat endpoint
+│       └── data.py         # Summary, at-risk, stats, trends
 │
-├── src/                  # Shared Python backend (used by API + notebook)
-│   ├── security.py       # UserContext dataclass (user_id)
-│   ├── sql_store.py      # SQLDataStore — primary data backend (SQL Server via SQLAlchemy + pyodbc, pooled)
-│   ├── tools.py          # LangGraph tools (13 tools, all security-aware)
-│   ├── prompt_guard.py   # Input validation: length cap, token budget, injection patterns
-│   ├── rag_store.py      # ChromaDB collections for schema and policy vector search
-│   ├── rag_ingestor.py   # Ingests PDFs/Markdown from docs/ + auto-indexes SQL schema
-│   ├── agent.py          # ExcelsisAgent — LangGraph ReAct agent (qwen2.5:14b)
-│   └── mcp_server.py     # FastMCP server for Claude Code
+├── src/                    # Shared Python backend
+│   ├── spark_store.py      # SparkDataStore — PySpark data engine
+│   ├── agent.py            # SparkAgent — LangGraph ReAct agent
+│   ├── tools.py            # 13 LangGraph tools
+│   ├── prompt_guard.py     # Input validation (length, token budget, injection)
+│   ├── rag_store.py        # ChromaDB schema + policy vector search
+│   ├── rag_ingestor.py     # Indexes PDFs/Markdown + Spark catalog schema
+│   ├── security.py         # UserContext dataclass
+│   └── mcp_server.py       # FastMCP stdio server for Claude Code
 │
-├── docs/                 # Policy documents scanned by rag_ingestor.py (.pdf and .md)
+├── docs/                   # Policy documents (.pdf and .md) for RAG ingestion
+├── data/                   # CSV / Parquet files loaded by SparkDataStore
 │
-├── web/                  # React frontend
+├── web/                    # React frontend
 │   └── src/
-│       ├── pages/        # Login, Chat, Dashboard, Users
-│       ├── components/   # Sidebar, MessageBubble, ProtectedRoute
-│       └── api/client.ts # Axios instance + SSE streaming helper
+│       ├── pages/          # Login, Chat, Dashboard, Users
+│       ├── components/     # Sidebar, MessageBubble, ProtectedRoute
+│       └── api/client.ts   # Axios + SSE streaming helper
 │
-├── docker/               # Local test infrastructure
-│   └── docker-compose.yml  # SQL Server 2022 container (education_db + finance_db)
+├── docker/
+│   └── docker-compose.yml  # Optional: containerised stack
 ├── scripts/
-│   └── seed_test_db.py   # Seed script — populates education_db (16 tables) and finance_db (18 tables)
-├── Excelsis.ipynb        # Interactive Jupyter notebook
-├── start.sh              # Start both servers (backend :8000, frontend :5173)
-├── requirements.lock     # Pinned Python dependencies (use this for installs)
-├── .env.example          # Environment variable template
-└── .env.test             # Pre-filled config for the Docker test database
+│   └── seed_data.py        # Generate sample CSV/Parquet data for testing
+├── start.sh                # Start both servers (backend :8000, frontend :5173)
+├── requirements.lock       # Pinned Python dependencies
+├── .env.example            # Environment variable template
+└── .env.test               # Pre-filled config for local testing
 ```
 
 ---
@@ -88,7 +85,7 @@ AI-powered data analyst for the Excelsis360 platform, built on a LangGraph ReAct
 
 ### 1. Install and start Ollama
 
-Download Ollama from [ollama.com](https://ollama.com) and pull the required model:
+Download Ollama from [ollama.com](https://ollama.com) and pull the required models:
 
 ```bash
 ollama pull qwen2.5:14b
@@ -103,14 +100,18 @@ Ollama must be running on `http://localhost:11434` before starting the app.
 cp .env.example .env
 ```
 
-Edit `.env` and fill in as needed:
+Set at minimum:
 
 ```env
-JWT_SECRET=change-me-in-production
-ADMIN_PASSWORD=your-admin-password
+PRIMARY_TABLE=your_table_name    # filename stem of your CSV/Parquet (no extension)
+GROUP_COLUMNS=department,region  # comma-separated grouping dimensions
 ```
 
-### 3. Install Python dependencies
+### 3. Add your data
+
+Place CSV or Parquet files in the `data/` directory. Each file is registered as a Spark SQL view named after its stem (e.g. `data/sales.csv` → view `sales`).
+
+### 4. Install Python dependencies
 
 ```bash
 python -m venv .venv
@@ -118,28 +119,22 @@ source .venv/bin/activate
 pip install -r requirements.lock
 ```
 
-> Ollama model weights are downloaded on first `ollama pull`. Subsequent starts are instant. `nomic-embed-text` is required for the RAG knowledge base; `qwen2.5:14b` drives the ReAct agent.
-
-### 4. Install frontend dependencies
+### 5. Install frontend dependencies
 
 ```bash
 cd web && npm install && cd ..
 ```
 
-### 5. Start both servers
+### 6. Start both servers
 
 ```bash
 bash start.sh
 ```
 
-This starts:
-- **Ollama** must already be running (see step 1)
-- **FastAPI** on `http://localhost:8000`
-- **React** on `http://localhost:5173`
+- **FastAPI** → `http://localhost:8000`
+- **React** → `http://localhost:5173`
 
-Open **http://localhost:5173** in your browser. You'll be redirected to the login page.
-
-Default credentials: `admin` / the value of `ADMIN_PASSWORD` in your `.env` (defaults to `admin123` if not set).
+Open **http://localhost:5173**. Default credentials: `admin` / the value of `ADMIN_PASSWORD` in `.env` (defaults to `admin123`).
 
 ---
 
@@ -148,93 +143,44 @@ Default credentials: `admin` / the value of `ADMIN_PASSWORD` in your `.env` (def
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `MODEL` | No | `qwen2.5:14b` | Ollama model for the ReAct agent |
-| `SQL_SERVER` | Yes | — | SQL Server hostname or IP |
-| `SQL_DATABASES` | Yes | — | Comma-separated list of databases to expose |
-| `SQL_PRIMARY_DB` | No | first in list | Default database for queries |
-| `SQL_DRIVER` | No | `{ODBC Driver 18 for SQL Server}` | ODBC driver string |
-| `SQL_AUTH_METHOD` | No | `sql` | `sql`, `windows`, or `azure_ad` |
-| `SQL_USERNAME` | If `sql` auth | — | SQL Server login username |
-| `SQL_PASSWORD` | If `sql` auth | — | SQL Server login password |
-| `SQL_POOL_SIZE` | No | `5` | SQLAlchemy `QueuePool` base connection count per database |
-| `SQL_QUERY_TIMEOUT` | No | `30` | Per-query connection timeout in seconds |
-| `AT_RISK_THRESHOLD` | No | `75.0` | Default attendance % threshold for at-risk flagging |
+| `SPARK_MASTER` | No | `local[*]` | Spark master URL (`local[*]` or `spark://host:7077`) |
+| `SPARK_APP_NAME` | No | `pyspark-ai-agent` | Spark application name |
+| `DATA_PATH` | No | `./data` | Directory scanned for CSV and Parquet files |
+| `PRIMARY_TABLE` | Yes | — | Spark view name the agent queries by default |
+| `METRIC_COLUMN` | No | `status` | Column holding the measured metric |
+| `POSITIVE_VALUE` | No | `active` | Value counted as a positive outcome |
+| `DATE_COLUMN` | No | `date` | Date column for time-based queries |
+| `ENTITY_COLUMN` | No | `entity_id` | Primary entity key column |
+| `ENTITY_NAME_COLUMN` | No | `entity_name` | Human-readable entity name column |
+| `GROUP_COLUMNS` | No | _(empty)_ | Comma-separated grouping dimensions |
+| `AT_RISK_THRESHOLD` | No | `75.0` | Default metric % threshold for alerts |
 | `JWT_SECRET` | Yes (prod) | `change-me-in-production` | Secret key for JWT signing |
 | `ADMIN_PASSWORD` | No | `admin123` | Password for the default admin account |
-| `PRIMARY_TABLE` | No | `attendance` | Primary SQL table the agent queries |
-| `METRIC_COLUMN` | No | `status` | Column holding the measured metric |
-| `POSITIVE_VALUE` | No | `present` | Value counted as a positive outcome |
-| `DATE_COLUMN` | No | `date` | Date column for time-based queries |
-| `ENTITY_COLUMN` | No | `student_id` | Primary entity key column |
-| `ENTITY_NAME_COLUMN` | No | `student_name` | Human-readable entity name column |
-| `GROUP_COLUMNS` | No | `class,grade` | Comma-separated grouping columns |
-| `CHROMA_PATH` | No | `.chroma` | Persistent ChromaDB directory path |
+| `CHROMA_PATH` | No | `.chroma` | Persistent ChromaDB directory |
 | `EMBED_MODEL` | No | `nomic-embed-text` | Ollama embedding model for RAG |
 | `DOCS_PATH` | No | `docs` | Directory scanned for policy documents |
-| `MAX_MESSAGE_LEN` | No | `2000` | Maximum characters allowed in a single chat message |
-| `MAX_PROMPT_TOKENS` | No | `2048` | Maximum estimated tokens (message + history) before rejection |
+| `MCP_USER_ID` | No | `mcp_user` | Fixed user identity for the MCP server |
+| `MAX_MESSAGE_LEN` | No | `2000` | Maximum characters in a single chat message |
+| `MAX_PROMPT_TOKENS` | No | `2048` | Maximum estimated tokens before rejection |
 
 ---
 
-## Docker Test Database
+## Example Questions
 
-For local development and integration testing without a production SQL Server, a Docker-based SQL Server 2022 instance is provided with two pre-seeded databases.
-
-```bash
-# Start the container (first run downloads ~1.5 GB image)
-docker compose -f docker/docker-compose.yml up -d
-
-# Install the seeding dependency (one-time)
-pip install faker
-
-# Seed both databases — choose a scale tier
-python scripts/seed_test_db.py --scale small   # ~100K rows, fast
-python scripts/seed_test_db.py --scale medium  # ~1M rows
-python scripts/seed_test_db.py --scale large   # ~5M rows across 34 tables, ~5–10 min
-
-# Use the pre-filled config
-cp .env.test .env
 ```
-
-| Database | Tables | Purpose |
-|---|---|---|
-| `education_db` | 16 | Attendance, students, teachers, grades, subjects |
-| `finance_db` | 18 | Transactions, invoices, purchase orders, budgets, expenses |
-
----
-
-## Models
-
-All models run locally via [Ollama](https://ollama.com). No API keys or internet access required at inference time.
-
-### LLM — `qwen2.5:14b`
-
-Drives the LangGraph ReAct loop via `ChatOllama`. Handles both tool calling (data queries, at-risk identification, dashboard requests, knowledge-base lookups) and direct conversational replies in a single unified pipeline.
-
----
-
-## Web Interface
-
-| Page | Path | Access |
-|---|---|---|
-| Login | `/login` | Public |
-| Chat | `/chat` | All authenticated users |
-| Dashboard | `/dashboard` | All authenticated users |
-| Users | `/users` | Admin only |
-
-### Chat
-Type any question in natural language. The analysis model streams its response token-by-token, with tool-use indicators showing which data sources it consulted (e.g. *Attendance data*, *SQL query*).
-
-Example questions:
-- *Which classes have the lowest attendance this month?*
-- *List all students below 70% in class 10A*
-- *What are the best intervention strategies for chronic absenteeism?*
-- *How does Monday attendance compare to Friday?*
+Which groups have the lowest metric rate this month?
+List all entities below 70% in segment_a
+What's the week-over-week trend for the last 6 weeks?
+Are there any statistical anomalies in the data?
+Compare last 7 days vs last 30 days
+Run a SQL query to count records by region
+```
 
 ---
 
 ## REST API
 
-The FastAPI backend is available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
+Interactive docs at `http://localhost:8000/docs`.
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
@@ -245,37 +191,38 @@ The FastAPI backend is available at `http://localhost:8000`. Interactive docs at
 | DELETE | `/auth/users/{username}` | Admin | Delete user |
 | POST | `/chat/stream` | Any | SSE streaming chat |
 | GET | `/data/summary` | Any | Data overview |
-| GET | `/data/at-risk` | Counselor+ | At-risk student list |
+| GET | `/data/at-risk` | Any | Entities below threshold |
 | GET | `/data/stats` | Any | Stats by group/period |
-| GET | `/data/trends` | Any | Period comparison: last 30 days vs prior 30 days |
+| GET | `/data/trends` | Any | Period comparison (last 30 vs prior 30) |
 | GET | `/data/sparklines` | Any | Sparkline trend data |
 | GET | `/health` | None | Liveness check |
 
 ---
 
-## Jupyter Notebook
+## MCP Server
 
-For interactive analysis, run the notebook directly:
+The FastMCP stdio server lets Claude Code query your data directly:
+
+```json
+{
+  "mcpServers": {
+    "pyspark-agent": {
+      "command": "python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "/path/to/PySpark-AI-Agent"
+    }
+  }
+}
+```
+
+Tools exposed: `ask_analyst`, `data_summary`, `threshold_alerts`, `group_statistics`, `schema_lookup`, `knowledge_lookup`.
+
+---
+
+## Tests
 
 ```bash
-source .venv/bin/activate
-jupyter notebook Excelsis.ipynb
+pytest tests/ -v                     # unit tests (no Ollama needed)
+pytest tests/ -v -m integration      # integration tests (requires Ollama)
+pytest tests/ -v --run-all           # everything
 ```
-
-Run cells in order (1 → 9). The notebook uses the same `src/` modules as the web backend. Cell 2 verifies that Ollama is reachable before continuing.
-
-To change who the analyst is (and what data they can access), edit `CURRENT_USER` in Cell 5:
-
-```python
-CURRENT_USER = UserContext(user_id="ms_johnson")
-```
-
----
-
-## Data
-
-Data is read directly from SQL Server. Configure the connection in `.env` (see [Environment Variables](#environment-variables)).
-
-The agent can query any database listed in `SQL_DATABASES`. The agent will adapt its T-SQL to whatever schema it finds via `run_sql_query`.
-
----
