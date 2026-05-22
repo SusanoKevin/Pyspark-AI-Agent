@@ -70,6 +70,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Environment Setup
 
+PySpark requires Java 8, 11, or 17. Verify before anything else:
+
+```bash
+java -version
+```
+
+If missing, install OpenJDK and set `JAVA_HOME` (see README → Local PySpark Setup for platform-specific instructions).
+
 ```bash
 ollama pull qwen2.5:14b
 ollama pull nomic-embed-text
@@ -78,6 +86,13 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.lock          # use the lock file for reproducible installs
 pip install -e ".[dev]"                   # adds faker (needed by scripts/seed_test_db.py)
 cd web && npm install && cd ..
+```
+
+Generate test data before first run:
+
+```bash
+python scripts/seed_data.py   # creates data/records.parquet
+cp .env.test .env             # pre-filled Spark + schema config
 ```
 
 Ollama must be running on `http://localhost:11434` before starting the stack.

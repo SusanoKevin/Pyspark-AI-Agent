@@ -138,6 +138,92 @@ Open **http://localhost:5173**. Default credentials: `admin` / the value of `ADM
 
 ---
 
+## Local PySpark Setup
+
+### Java prerequisite
+
+PySpark requires Java 8, 11, or 17. Verify you have it:
+
+```bash
+java -version
+```
+
+If Java is missing, install OpenJDK and set `JAVA_HOME`:
+
+```bash
+# macOS (Homebrew)
+brew install openjdk@17
+export JAVA_HOME=$(brew --prefix openjdk@17)
+```
+
+```bash
+# Ubuntu / Debian
+sudo apt install openjdk-17-jdk
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+```
+
+Add the `export JAVA_HOME=...` line to your `~/.zshrc` or `~/.bashrc` so it persists across sessions.
+
+### Generate test data
+
+The seed script creates a ready-to-use Parquet dataset so you can start the agent without bringing your own data:
+
+```bash
+python scripts/seed_data.py               # 50,000 rows (default)
+python scripts/seed_data.py --rows 10000  # smaller set, faster Spark startup
+```
+
+Output: `data/records.parquet`
+
+| Column | Type | Example values |
+|---|---|---|
+| `entity_id` | string | `E00001` … `E01000` |
+| `entity_name` | string | `Entity 1` … `Entity 1000` |
+| `status` | string | `active` (78%) / `inactive` (22%) |
+| `date` | date string | `2024-03-15` |
+| `segment` | string | `Engineering`, `Sales`, `Marketing`, `Operations`, `Finance` |
+| `category` | string | `Full-Time`, `Part-Time`, `Contractor` |
+
+### Use the pre-filled test config
+
+`.env.test` has all Spark vars pre-configured for the seed data:
+
+```bash
+cp .env.test .env
+```
+
+Key values it sets:
+
+```env
+SPARK_MASTER=local[*]
+DATA_PATH=./data
+PRIMARY_TABLE=records
+GROUP_COLUMNS=segment,category
+METRIC_COLUMN=status
+POSITIVE_VALUE=active
+```
+
+### Spark UI
+
+While the app is running, the Spark job dashboard is available at **http://localhost:4040**. Useful for inspecting query plans and monitoring job progress.
+
+### Memory tuning
+
+The defaults work for most laptops. If you run into issues:
+
+```env
+# Reduce shuffle partitions on machines with < 8 GB RAM
+# Add to .env:
+SPARK_DRIVER_MEMORY=2g   # increase for datasets > 500 MB
+```
+
+To lower shuffle partitions, edit `spark_store.py:83`:
+```python
+.config("spark.sql.shuffle.partitions", "4")  # default is 8
+```
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
