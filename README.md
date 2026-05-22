@@ -219,6 +219,71 @@ Tools exposed: `ask_analyst`, `data_summary`, `threshold_alerts`, `group_statist
 
 ---
 
+## Spark SQL
+
+The `run_sql_query` tool executes ad-hoc **Spark SQL** against the registered data views. Only `SELECT` statements are allowed — DML and DDL are blocked at parse time by `sqlglot`.
+
+### Key syntax differences from T-SQL / standard SQL
+
+| Operation | T-SQL | Spark SQL |
+|---|---|---|
+| Limit rows | `SELECT TOP 10 …` | `SELECT … LIMIT 10` |
+| Format a date | `FORMAT(date, 'yyyy-MM')` | `date_format(date, 'yyyy-MM')` |
+| Subtract days | `DATEADD(day, -7, date)` | `date_sub(date, 7)` |
+| Add days | `DATEADD(day, 7, date)` | `date_add(date, 7)` |
+| Day of week | `DATEPART(weekday, date)` | `dayofweek(date)` (1=Sun … 7=Sat) |
+| String concat | `col1 + col2` | `CONCAT(col1, col2)` |
+| Null-safe divide | `col / NULLIF(n, 0)` | `col / NULLIF(n, 0)` _(same)_ |
+| Cast | `CAST(x AS INT)` | `CAST(x AS INT)` _(same)_ |
+
+### Common date format patterns
+
+| Pattern | Output example |
+|---|---|
+| `'yyyy-MM-dd'` | `2024-03-15` |
+| `'yyyy-MM'` | `2024-03` |
+| `'yyyy'` | `2024` |
+| `'EEEE'` | `Friday` |
+| `'E'` | `Fri` |
+
+### Example queries
+
+```sql
+-- Records per group in the last 30 days
+SELECT department, COUNT(*) AS total
+FROM employees
+WHERE CAST(date AS DATE) >= date_sub(CURRENT_DATE(), 30)
+GROUP BY department
+ORDER BY total DESC
+LIMIT 20
+
+-- Weekly metric rate over the last 8 weeks
+SELECT
+  date_format(date_sub(CAST(date AS DATE), (dayofweek(CAST(date AS DATE)) + 5) % 7), 'yyyy-MM-dd') AS week_start,
+  ROUND(100.0 * SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) / COUNT(*), 1) AS metric_rate
+FROM my_table
+GROUP BY week_start
+ORDER BY week_start DESC
+LIMIT 8
+
+-- Entities with the most records, filtered by segment
+SELECT entity_id, entity_name, COUNT(*) AS total
+FROM my_table
+WHERE region = 'APAC'
+GROUP BY entity_id, entity_name
+ORDER BY total DESC
+LIMIT 10
+```
+
+### Tips
+
+- Call `retrieve_schema` first to confirm view names and column names before writing a query.
+- Use `LIMIT` — queries without one are automatically capped at 200 rows.
+- All views live in the same Spark catalog; there is no database prefix needed.
+- Use `CAST(date_col AS DATE)` before date functions if the column is stored as a string.
+
+---
+
 ## Tests
 
 ```bash
