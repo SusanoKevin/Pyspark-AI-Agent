@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pyspark-ai": {
+      "command": "python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": ".",
+      "env": {
+        "MODEL":         "${MODEL}",
+        "SPARK_MASTER":  "${SPARK_MASTER}",
+        "DATA_PATH":     "${DATA_PATH}",
+        "MCP_USER_ID":   "claude_code"
+      }
+    }
+  }
+}

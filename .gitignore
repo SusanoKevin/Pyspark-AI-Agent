@@ -1,0 +1,21 @@
+.env
+*.env
+data/
+models/*.pt
+models/*.pkl
+__pycache__/
+*.pyc
+.venv/
+*.csv
+*.parquet
+.ipynb_checkpoints/
+data/dashboards/
+logs/
+data/chroma_db/
+.chroma/
+docs/*.pdf
+.cursor/
+web/node_modules/
+web/dist/
+.DS_Store
+github personal access token

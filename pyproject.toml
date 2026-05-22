@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyspark-ai-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    # AI / ML
+    "langchain>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langchain-text-splitters>=0.3.0",
+    "chromadb>=0.5.0,<2.0.0",
+    "langchain-chroma>=0.2.0",
+    "pypdf>=5.0.0",
+    "langchain-core>=0.3.0",
+    "langchain-ollama>=0.2.0",
+    "langgraph>=0.2.0",
+    "mcp[cli]>=1.0.0",
+    # API
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.0.0",
+    # Data
+    "pandas>=2.0.0",
+    "pyarrow>=14.0.0",
+    # Spark
+    "pyspark>=3.5",
+    "sqlglot>=25.0.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "slowapi>=0.1.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "faker>=25.0.0",
+    "openpyxl>=3.1.0",
+]
