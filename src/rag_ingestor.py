@@ -64,7 +64,7 @@ def ingest_schemas(
 
 
 def ingest_docs(
-    store: ExcelsisRAGStore,
+    store: SparkRAGStore,
     docs_path: str = "docs",
     force: bool = False,
 ) -> int:
