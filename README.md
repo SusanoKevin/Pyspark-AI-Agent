@@ -1,6 +1,8 @@
 # PySpark AI Agent
 
-AI-powered data analyst built on PySpark. Ask natural-language questions about any CSV or Parquet dataset; a LangGraph ReAct agent reasons across 13 tools, runs Spark SQL, and streams answers token-by-token through a FastAPI + React interface.
+**Point it at any CSV or Parquet dataset and start asking questions in plain English** — an AI data analyst that reasons across 13 tools, writes and runs its own Spark SQL, and streams grounded answers back token-by-token.
+
+Built on PySpark for the data engine, a LangGraph ReAct agent for reasoning, and a FastAPI + React interface for the UI — with a RAG layer that grounds every answer in the real schema and policy docs, not guesses.
 
 ---
 
