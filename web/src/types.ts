@@ -1,86 +1,44 @@
-export interface AuthUser {
-  token:  string
-  userId: string
+// ── Streamed trace events (mirrors api/routers/task.py SSE payloads) ──────────
+
+export interface CodeAttemptEvent {
+  type: 'code_attempt'
+  step: number
+  code: string
 }
 
-// ── Dashboard filter / drill state ────────────────────────────────────────────
-
-export type DashboardPeriod = 'all' | 'last_7_days' | 'last_30_days' | 'custom'
-export type DrillLevel      = 'overview' | 'group' | 'entity'
-
-export interface DashboardFilter {
-  classes:    string[]
-  period:     DashboardPeriod
-  date_from?: string
-  date_to?:   string
+export interface ExecutionResultEvent {
+  type:   'execution_result'
+  step:   number
+  output?: string
+  error?:  string
 }
 
-export interface DashboardFilterEvent {
-  classes: string[]
-  period:  DashboardPeriod
-  view:    DrillLevel
+export interface FinalResultEvent {
+  type:   'final_result'
+  result: string
 }
 
-// ── Chart data row shapes ─────────────────────────────────────────────────────
-
-export interface GroupStat {
-  class:          string
-  total:          number
-  positive_count: number
-  metric_rate:    number
+export interface ErrorEvent {
+  type:    'error'
+  message: string
 }
 
-export interface WeeklyStat {
-  week:           string
-  total:          number
-  positive_count: number
-  metric_rate:    number
+export interface DoneEvent {
+  type: 'done'
 }
 
-export interface DimensionStat {
-  day_of_week:    string
-  total:          number
-  positive_count: number
-  metric_rate:    number
-}
+export type StreamEvent =
+  | CodeAttemptEvent
+  | ExecutionResultEvent
+  | FinalResultEvent
+  | ErrorEvent
+  | DoneEvent
 
-export interface StatusCount {
-  name:  string
-  value: number
-  color: string
-}
+// ── Client-side aggregated view of one code_attempt + its result ──────────────
 
-// ── Messaging ─────────────────────────────────────────────────────────────────
-
-export interface Message {
-  role:             'user' | 'assistant'
-  content:          string
-  toolsUsed:        string[]
-  isStreaming?:     boolean
-  dashboardFilter?: DashboardFilterEvent
-}
-
-// ── API response shapes ───────────────────────────────────────────────────────
-
-export interface DataSummary {
-  total_records:         number
-  entity_count:          number
-  date_range:            { from: string; to: string }
-  metric_rate:           number
-  below_threshold_count: number
-  dimensions:            string[]
-}
-
-export interface StatsRow {
-  [key: string]: string | number
-  metric_rate: number
-}
-
-export interface AlertItem {
-  entity_id:      number
-  label?:         string
-  group_name?:    string
-  total:          number
-  positive_count: number
-  metric_rate:    number
+export interface Attempt {
+  step:    number
+  code:    string
+  output?: string
+  error?:  string
 }

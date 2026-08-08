@@ -5,10 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth':        'http://localhost:8000',
-      '/chat/stream': 'http://localhost:8000',
-      '/data':        'http://localhost:8000',
-      '/health':      'http://localhost:8000',
+      '/task':   'http://localhost:8000',
+      '/health': 'http://localhost:8000',
     },
   },
 })

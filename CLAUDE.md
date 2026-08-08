@@ -70,74 +70,40 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Environment Setup
 
-PySpark requires Java 8, 11, or 17. Verify before anything else:
-
 ```bash
-java -version
-```
-
-If missing, install OpenJDK and set `JAVA_HOME` (see README → Local PySpark Setup for platform-specific instructions).
-
-```bash
-ollama pull qwen2.5:14b
-ollama pull nomic-embed-text
+ollama pull qwen2.5-coder:14b-instruct-q4_K_M
 cp .env.example .env
+# fill in DATABRICKS_HOST / DATABRICKS_TOKEN
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.lock          # use the lock file for reproducible installs
-pip install -e ".[dev]"                   # adds faker (needed by scripts/seed_test_db.py)
+pip install -e ".[dev]"                   # adds pytest
 cd web && npm install && cd ..
 ```
 
-Generate test data before first run:
+> `databricks-connect` and plain `pyspark` cannot coexist in the same environment — this project depends on `databricks-connect` only, which bundles its own `pyspark`-compatible client. It also pins `numpy<2` with no prebuilt wheel past cp313, so `.venv` must be built from Python 3.11–3.13, not 3.14+.
+
+Seed sample data before first run (one time, requires live Databricks credentials):
 
 ```bash
-python scripts/seed_data.py   # creates data/records.parquet
-cp .env.test .env             # pre-filled Spark + schema config
+python scripts/seed_databricks.py --rows 5000   # uploads sample_sales to Unity Catalog
+cp .env.test .env                                 # pre-filled config template
 ```
 
 Ollama must be running on `http://localhost:11434` before starting the stack.
 
 Required `.env` variables:
-- `JWT_SECRET` — must be changed from the default before any production use
-- `SQL_SERVER` — SQL Server hostname or IP
-- `SQL_DATABASES` — comma-separated list of databases to expose
-- `SQL_USERNAME` / `SQL_PASSWORD` — credentials when using `SQL_AUTH_METHOD=sql`
-- `SQL_POOL_SIZE` — default `5`; SQLAlchemy `QueuePool` base connection count per database
-- `SQL_QUERY_TIMEOUT` — default `30`; per-query connection timeout in seconds
+- `DATABRICKS_HOST` — workspace URL
+- `DATABRICKS_TOKEN` — personal access token
 
 Key optional variables:
-- `MODEL` — default `qwen2.5:14b`; Ollama model used by the ReAct agent
-- `AT_RISK_THRESHOLD` — default `75.0`
-- `ADMIN_PASSWORD` — default `admin123`; sets the initial admin password on first run
-
-Schema / domain config (all optional, override to point at any tabular SQL schema):
-- `PRIMARY_TABLE` — default `attendance`; main table the agent queries
-- `METRIC_COLUMN` / `POSITIVE_VALUE` — default `status` / `present`; what counts as a success
-- `DATE_COLUMN` — default `date`; time column for period filtering
-- `ENTITY_COLUMN` / `ENTITY_NAME_COLUMN` — default `student_id` / `student_name`
-- `GROUP_COLUMNS` — default `class,grade`; comma-separated grouping dimensions
-
-RAG / vector store config:
-- `CHROMA_PATH` — default `.chroma`; persistent ChromaDB directory
-- `EMBED_MODEL` — default `nomic-embed-text`; Ollama embedding model (must be pulled first)
-- `DOCS_PATH` — default `docs`; directory scanned for policy PDFs and Markdown files
-
-Prompt validation config:
-- `MAX_MESSAGE_LEN` — default `2000`; maximum characters in a single chat message
-- `MAX_PROMPT_TOKENS` — default `2048`; maximum estimated tokens (message + history) before rejection
-
-## Docker Test Database
-
-For local development without a production SQL Server:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-pip install faker                              # dev dependency — seeder only
-python scripts/seed_test_db.py --scale large   # ~5M rows across 34 tables
-cp .env.test .env                              # pre-filled Docker config
-```
-
-Databases created: `education_db` (16 tables) and `finance_db` (18 tables).
+- `CODER_MODEL` — default `ollama_chat/qwen2.5-coder:14b-instruct-q4_K_M`; LiteLLM model id for the coding agent
+- `OLLAMA_BASE_URL` — default `http://localhost:11434`
+- `MAX_STEPS` — default `6`; bounds the write→run→fix self-repair loop (Databricks Free Edition has a per-account fair-use quota)
+- `AGENT_STEP_TIMEOUT_S` — default `180`; max wait per streamed step before erroring out
+- `DATABRICKS_CATALOG` / `DATABRICKS_SCHEMA` — default _(workspace default)_ / `default`; Unity Catalog catalog/schema the agent introspects and queries against
+- `SEED_TABLE` — default `sample_sales`; table name used by `scripts/seed_databricks.py`
+- `MAX_MESSAGE_LEN` — default `2000`; maximum characters in a single task description
+- `MAX_PROMPT_TOKENS` — default `2048`; maximum estimated tokens before rejection
 
 ## Running the Stack
 
@@ -157,21 +123,14 @@ Interactive API docs: `http://localhost:8000/docs`
 ## Tests
 
 ```bash
-pytest tests/test_qa.py -v                 # unit tests only (no Ollama needed)
-pytest tests/test_qa.py -v -m integration  # integration tests (requires Ollama)
-pytest tests/test_qa.py -v --run-all       # everything
+pytest tests/ -v
 ```
 
-Unit tests (`TestZeroKnowledge`, `TestPromptValidation`) call tools and guards directly — no LLM involved, fast. Integration tests (`TestModelStress`) hit a live Ollama instance.
-
-## Jupyter Notebook
-
-```bash
-source .venv/bin/activate
-jupyter notebook Excelsis.ipynb
-```
-
-Run cells in order (1 → 9). To change the analyst identity, edit `CURRENT_USER` in Cell 5.
+- `TestSelfRepair` (`tests/test_qa.py`) — proves a failed attempt's error and a subsequent successful attempt both surface correctly, using a stubbed `CodeAgent` (no live Ollama needed)
+- `TestAuthorizedImports` — asserts the import allowlist stays minimal and that `LocalPythonExecutor` actually blocks an unauthorized import (e.g. `os`) at runtime
+- `TestPromptValidation` — length/empty/injection/token-budget checks on `src/prompt_guard.py`
+- `TestSelectOnlyGuard` (`tests/test_security.py`) — the sqlglot SELECT-only guard against INSERT/UPDATE/DELETE/DDL and stacked statements
+- `TestDatabricksConnectSmoke` — a real session-creation + catalog-listing check, skipped unless `DATABRICKS_HOST`/`DATABRICKS_TOKEN` are set
 
 ---
 
@@ -179,46 +138,32 @@ Run cells in order (1 → 9). To change the analyst identity, edit `CURRENT_USER
 
 ### Request flow
 
-Browser → React (`web/`) → FastAPI (`api/`) → `validate_message` / `check_token_budget` (`src/prompt_guard.py`) → `ExcelsisAgent` (`src/agent.py`) → LangGraph ReAct loop → tools (`src/tools.py`) → `SQLDataStore` (`src/sql_store.py`)
+Browser → React (`web/`) → FastAPI (`api/routers/task.py`) → `validate_message` (`src/prompt_guard.py`) → `PySparkCodeAgent` (`src/agent.py`) → smolagents `CodeAgent` write→execute→self-repair loop, executing against `DatabricksDataStore.spark` (`src/databricks_store.py`)
 
-For schema/policy questions, tools also call → `ExcelsisRAGStore` (`src/rag_store.py`) → ChromaDB vector search.
+This is not a fixed-tool agent — there's no RAG layer and no tool registry. The LLM's action *is* generated PySpark/Python source, run by smolagents' `LocalPythonExecutor` against the live Spark session, with the traceback (if any) fed back into the next step.
 
-The `/chat/stream` endpoint uses SSE (`StreamingResponse`); the frontend consumes `on_chat_model_stream`, `on_tool_start`, and `on_tool_end` events from LangGraph's `astream_events`.
+The `POST /task` endpoint uses SSE (`StreamingResponse`); the frontend (`web/src/api/client.ts`) consumes `code_attempt`, `execution_result`, `final_result`, `error`, and `done` events streamed from `PySparkCodeAgent.astream_events` (`src/agent.py`).
 
 ### Prompt validation (`src/prompt_guard.py`)
 
-Two functions gate every message before it reaches the agent:
+Two functions gate every task before it reaches the agent:
 - `validate_message(message)` — strips whitespace, rejects empty strings, enforces `MAX_MESSAGE_LEN` (default 2000 chars), and scans for injection patterns (e.g. "ignore previous instructions", "jailbreak", "DAN"). Returns the stripped message or raises `ValueError`.
 - `check_token_budget(message, history_chars)` — estimates token count as `(len(message) + history_chars) // 4` and raises `ValueError` if it exceeds `MAX_PROMPT_TOKENS` (default 2048).
 
-Both are called in `api/routers/chat.py` before streaming and in `ExcelsisAgent.ask` / `astream_events` before the LangGraph loop.
+`validate_message` is called in `api/routers/task.py` before the SSE stream starts; there is no conversation history, so `check_token_budget` runs against the task text alone.
 
-### Security (`src/security.py`)
+### Agent wiring (`src/executor.py`)
 
-`UserContext` is a simple dataclass with a single field: `user_id`. There is no role enum, no permission system, and no row-level filtering in the current implementation. Authentication is purely identity-based — the JWT `sub` claim is decoded to a username and wrapped in `UserContext`.
+`build_agent()` constructs a fresh smolagents `CodeAgent` per task — no cross-request conversation state, since each call's job is "write, run, and self-repair code for this one task." `AUTHORIZED_IMPORTS` is a tight allowlist (`pyspark`, `pyspark.sql`, `pandas`, `numpy`) enforced by `LocalPythonExecutor`; `MAX_STEPS` (default `6`) bounds the loop to respect Databricks Free Edition's fair-use quota. `build_task_prompt()` grounds the task in live catalog context from `DatabricksDataStore.get_catalog_context()`.
 
-### User management (`api/auth.py` + `api/users.json`)
+### Agent wrapper (`src/agent.py`)
 
-Users are stored as bcrypt-hashed records in `api/users.json`. On startup, `ensure_default_admin()` creates the admin account if missing. JWTs embed only `sub` (username) and `exp` (expiry); `decode_token()` reconstructs a `UserContext(user_id=username)` from them. Token TTL is 24 hours.
+`PySparkCodeAgent.run()` / `.astream_events()` build a fresh `CodeAgent`, run it against `store.spark`, and translate smolagents' `ActionStep` memory objects into SSE-shaped dicts (`_step_events`). Each step with a `code_action` emits a `code_attempt` event followed by an `execution_result` event (`output` on success, `error` on failure); the final `FinalAnswerStep` becomes the `final_result` event.
 
-### RAG layer (`src/rag_store.py` + `src/rag_ingestor.py`)
+### Data backend (`src/databricks_store.py`)
 
-`ExcelsisRAGStore` holds two ChromaDB collections: `excelsis_schema` (SQL table/column metadata, 6 results) and `excelsis_policy` (policy documents, 4 results). Embeddings use `nomic-embed-text` via Ollama. On startup, a background daemon thread runs `ExcelsisRAGIngestor`, which indexes every `.pdf` and `.md` file under `DOCS_PATH` and auto-ingests `INFORMATION_SCHEMA` for all databases in `SQL_DATABASES`. Chunk size: 800 chars, overlap: 80.
+`DatabricksDataStore` wraps a Databricks Connect session (`DatabricksSession.builder...serverless(True).getOrCreate()`), configured via `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_CATALOG`, `DATABRICKS_SCHEMA`. It holds no fixed analytics methods — the CodeAgent writes its own PySpark/SQL per task. It provides live catalog introspection (`get_catalog_context()`, backed by `spark.catalog.listTables()` / `listColumns()`) to ground the agent in real table/column names, plus a guarded `query()` escape hatch. Any `spark.sql(...)` text is parsed with `sqlglot` (`_assert_select_only`) and rejected unless it's a single `SELECT` statement — defense-in-depth alongside the import allowlist, since the primary sandbox boundary is `AUTHORIZED_IMPORTS`. `store.close()` stops the Spark session and is called automatically on FastAPI lifespan shutdown.
 
 ### MCP server (`src/mcp_server.py`)
 
-FastMCP stdio server that gives a model direct access to Excelsis 360 data. On startup it initialises `SQLDataStore`, `ExcelsisRAGStore`, and `ExcelsisAgent`; user identity is fixed for the process lifetime via `MCP_USER_ID`.
-
-The server exposes two interaction modes:
-
-- **`ask_analyst(query)`** — routes a natural-language question through the full LangGraph ReAct loop; the agent selects tools, reasons step-by-step, and returns a complete answer. Use this when the model wants the agent to do the work.
-- **Direct data tools** — bypass the agent and return raw results the model can reason about itself:
-  - `data_summary()` — JSON overview (record count, entity count, date range, metric rate)
-  - `threshold_alerts(threshold)` — entities below a metric threshold
-  - `group_statistics(group_by, period)` — metric stats grouped by dimension and period
-  - `schema_lookup(query)` — vector search of DB table/column metadata
-  - `knowledge_lookup(query)` — vector search of policy and rule documents
-
-### Data backend (`src/sql_store.py`)
-
-`SQLDataStore` connects to SQL Server via SQLAlchemy (`mssql+pyodbc`) with a `QueuePool` connection pool (one engine per database, created at startup). Pool size and per-query timeout are controlled by `SQL_POOL_SIZE` (default `5`) and `SQL_QUERY_TIMEOUT` (default `30` s). All other connection settings come from env vars: `SQL_SERVER`, `SQL_DATABASES`, `SQL_PRIMARY_DB`, `SQL_AUTH_METHOD`, `SQL_USERNAME`, `SQL_PASSWORD`. The table and column names are fully configurable via `PRIMARY_TABLE`, `METRIC_COLUMN`, `POSITIVE_VALUE`, `DATE_COLUMN`, `ENTITY_COLUMN`, `ENTITY_NAME_COLUMN`, and `GROUP_COLUMNS` — defaults match the original attendance schema (`attendance`, `status`, `present`, `date`, `student_id`, `student_name`, `class,grade`). The agent can also query other databases listed in `SQL_DATABASES` via the `run_sql_query` tool's `database` parameter. All queries are read-only; writes are blocked via `sqlglot` parse-time validation. `store.close()` disposes all engines and is called automatically on FastAPI lifespan shutdown.
+FastMCP stdio server exposing one tool: `run_pyspark_task(task: str) -> {"code": "...", "result": "..."}`. On startup it builds its own `DatabricksDataStore` and `PySparkCodeAgent` (independent of the FastAPI process). Config for Claude Code: `python -m src.mcp_server`.

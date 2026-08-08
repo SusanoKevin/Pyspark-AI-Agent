@@ -1,28 +1,21 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from api.deps import get_agent, get_current_user
-from api.limiter import limiter
-from api.models import ChatRequest
+from api.deps import get_agent
+from api.models import TaskRequest
 from src.prompt_guard import validate_message
-from src.security import UserContext
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/stream")
-@limiter.limit("10/minute")
-async def chat_stream(
-    body: ChatRequest,
-    request: Request,
-    user: UserContext = Depends(get_current_user),
-):
+@router.post("/task")
+async def run_task(body: TaskRequest, request: Request):
     try:
-        validated = validate_message(body.message)
+        validated = validate_message(body.task)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -30,12 +23,12 @@ async def chat_stream(
 
     async def generate():
         try:
-            async for event in agent.astream_events(validated, user=user):
+            async for event in agent.astream_events(validated):
                 yield f"data: {json.dumps(event)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception as e:
-            logger.exception("Chat stream error")
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Model error: {e}'})}\n\n"
+            logger.exception("Task stream error")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Agent error: {e}'})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(

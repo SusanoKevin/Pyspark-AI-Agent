@@ -1,4 +1,4 @@
-# PySpark AI Agent runs Spark in local mode — no Docker service required.
-# Data is loaded from Parquet/CSV files in the DATA_PATH directory.
-# To generate test data: python scripts/seed_data.py
+# PySpark AI Agent runs against a remote Databricks Connect session — no
+# local Spark or Docker service required.
+# To seed sample data: python scripts/seed_databricks.py
 services: {}

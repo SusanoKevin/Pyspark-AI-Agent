@@ -1,44 +1,15 @@
-import axios from 'axios'
-import { DashboardFilterEvent } from '../types'
+import { StreamEvent } from '../types'
 
-const api = axios.create({ baseURL: '/' })
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-
-api.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.clear()
-      window.location.href = '/login'
-    }
-    return Promise.reject(err)
-  }
-)
-
-export default api
-
-export async function streamChat(
-  message: string,
-  onToken:           (t: string) => void,
-  onToolStart:       (tool: string) => void,
-  onToolEnd:         (tool: string) => void,
-  onDone:            () => void,
-  onError:           (msg: string) => void,
-  onDashboardFilter?: (f: DashboardFilterEvent) => void,
+export async function streamTask(
+  task: string,
+  onEvent: (event: StreamEvent) => void,
+  onDone: () => void,
+  onError: (message: string) => void,
 ) {
-  const token = localStorage.getItem('token')
-  const res = await fetch('/chat/stream', {
+  const res = await fetch('/task', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ message }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task }),
   })
 
   if (!res.ok) { onError(`Request failed: ${res.status}`); return }
@@ -61,18 +32,13 @@ export async function streamChat(
       const raw = line.slice(6).trim()
       if (!raw) continue
       try {
-        const evt = JSON.parse(raw)
-        if      (evt.type === 'token')            onToken(evt.content)
-        else if (evt.type === 'tool_start')       onToolStart(evt.tool)
-        else if (evt.type === 'tool_end')         onToolEnd(evt.tool)
-        else if (evt.type === 'done')             onDone()
-        else if (evt.type === 'error')            onError(evt.message)
-        else if (evt.type === 'dashboard_filter') onDashboardFilter?.({
-          classes: evt.classes ?? [],
-          period:  evt.period  ?? 'all',
-          view:    evt.view    ?? 'overview',
-        })
-      } catch { /* ignore malformed SSE lines */ }
+        const evt = JSON.parse(raw) as StreamEvent
+        if (evt.type === 'done') { onDone(); continue }
+        if (evt.type === 'error') { onError(evt.message); continue }
+        onEvent(evt)
+      } catch {
+        /* ignore malformed SSE lines */
+      }
     }
   }
 }

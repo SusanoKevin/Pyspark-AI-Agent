@@ -7,35 +7,29 @@ name = "pyspark-ai-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    # AI / ML
-    "langchain>=0.3.0",
-    "langchain-community>=0.3.0",
-    "langchain-text-splitters>=0.3.0",
-    "chromadb>=0.5.0,<2.0.0",
-    "langchain-chroma>=0.2.0",
-    "pypdf>=5.0.0",
-    "langchain-core>=0.3.0",
-    "langchain-ollama>=0.2.0",
-    "langgraph>=0.2.0",
-    "mcp[cli]>=1.0.0",
+    # AI / ML — smolagents CodeAgent writes+executes PySpark code and self-repairs
+    # from tracebacks; LiteLLM routes it to a local Ollama coder model.
+    "smolagents>=1.15.0",
+    "litellm>=1.55.0",
+    # Pinned below 2.0 — that release renamed FastMCP to MCPServer and moved
+    # it out of mcp.server.fastmcp, breaking the standard `from
+    # mcp.server.fastmcp import FastMCP` pattern src/mcp_server.py relies on.
+    "mcp[cli]>=1.0.0,<2.0.0",
     # API
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
-    "python-jose[cryptography]>=3.3.0",
-    "bcrypt>=4.0.0",
     # Data
     "pandas>=2.0.0",
     "pyarrow>=14.0.0",
-    # Spark
-    "pyspark>=3.5",
+    # Spark compute — Databricks Connect bundles its own pyspark-compatible
+    # client; a plain `pyspark` dependency cannot coexist with it.
+    "databricks-connect>=15.4",
     "sqlglot>=25.0.0",
     # Utilities
     "python-dotenv>=1.0.0",
-    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "faker>=25.0.0",
-    "openpyxl>=3.1.0",
+    "pytest>=8.0.0",
 ]
